@@ -1,4 +1,5 @@
 This database is for use on the Group Project for Class COMP 6600.
+
 Mady by:
 
 Jason Wang, Coordinator, Email: zzw0104@auburn.edu.
