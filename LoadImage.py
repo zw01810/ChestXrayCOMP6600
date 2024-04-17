@@ -14,7 +14,8 @@ transform = transforms.Compose([
 ])
 
 # Load the dataset from Hugging Face
-dataset = load_dataset('alkzar90/NIH-Chest-X-ray-dataset')
+# Lneed to specify the "image-classification"
+dataset = load_dataset('alkzar90/NIH-Chest-X-ray-dataset', 'image-classification')
 
 # Assuming the dataset has a split 'train'
 train_data = dataset['train'].map(lambda x: transform(x['image']), batched=True)
