@@ -1,76 +1,150 @@
-import torch
-from torch import nn, optim
-from torchvision import datasets, transforms, models
-from torch.utils.data import DataLoader
 from datasets import load_dataset
+
+# Load the dataset with trust_remote_code to avoid FutureWarning
+dataset = load_dataset(
+    "alkzar90/NIH-Chest-X-ray-dataset",
+    name="image-classification",
+    split="train",
+    trust_remote_code=True
+)
+
+# Select a smaller subset
+subset = dataset.select(range(100))  # First 100 samples
+
+# Check available keys
+print("Available keys:", subset[0].keys())
+
+# Since 'image' is available, try to access the image data
+# This accesses the actual image data, which may be a Pillow Image object
+images = [item['image'] for item in subset if 'image' in item]
+
+# Check if images were successfully retrieved
+if not images:
+    print("Error: No valid images found")
+else:
+    print("Successfully retrieved images.")
+
+# Flatten and map labels to their corresponding class names
+labels = [item.get('labels', []) for item in subset]
+flattened_labels = [item for sublist in labels for item in sublist]
+
+class_labels = {
+    0: "No Finding",
+    1: "Atelectasis",
+    2: "Cardiomegaly",
+    3: "Effusion",
+    4: "Infiltration",
+    5: "Mass",
+    6: "Nodule",
+    7: "Pneumonia",
+    8: "Pneumothorax",
+    9: "Consolidation",
+    10: "Edema",
+    11: "Emphysema",
+    12: "Fibrosis",
+    13: "Pleural Thickening",
+    14: "Hernia",
+}
+
+label_names = [class_labels.get(label, "Unknown") for label in flattened_labels]
+
+# Additional code to work with the retrieved images and labels
+from PIL import Image
+
+# Example: Convert images to grayscale and resize
+processed_images = [img.convert("L").resize((256, 256)) for img in images]
+
+import matplotlib.pyplot as plt
+
+# Display the first 5 images
+for i, img in enumerate(processed_images[:5]):
+    plt.subplot(1, 5, i + 1)
+    plt.imshow(img, cmap="gray")
+    plt.axis("off")
+#plt.show()
+
+# Display the first few label names
+#print("First 5 label names:", label_names[:50])
+
+def categorize_label(label_name):
+    if label_name == "No Finding":
+        return "No Finding"
+    elif label_name == "Infiltration":
+        return "Infiltration"
+    else:
+        return "other"
+
+new_label_names = [categorize_label(label) for label in label_names]
+
+#print("First 5 label names:", new_label_names[:50])
+
 import numpy as np
 
-# Define a transform to resize and flatten the images
-transform = transforms.Compose([
-    transforms.Resize((128, 128)),  # Resize to a manageable size
-    transforms.Grayscale(),  # Convert to grayscale
-    transforms.ToTensor(),
-    transforms.Lambda(lambda x: torch.flatten(x))  # Flatten the images
-])
+# Convert images to NumPy arrays for ML
+image_arrays = [np.array(img) for img in processed_images]
 
-# Load the dataset from Hugging Face
-# Lneed to specify the "image-classification"
-dataset = load_dataset('alkzar90/NIH-Chest-X-ray-dataset', 'image-classification')
+from sklearn.preprocessing import LabelBinarizer
 
-# Assuming the dataset has a split 'train'
-train_data = dataset['train'].map(lambda x: transform(x['image']), batched=True)
-train_labels = torch.tensor(np.array(dataset['train']['label']))
-
-# DataLoader
-train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
-
-# Define the MLP model
-class MLP(nn.Module):
-    def __init__(self):
-        super(MLP, self).__init__()
-        self.fc1 = nn.Linear(128*128, 512)  # Adjust input size according to your resize operation
-        self.fc2 = nn.Linear(512, 128)
-        self.fc3 = nn.Linear(128, len(np.unique(train_labels)))  # Output layer size = number of classes
-
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-model = MLP()
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-# Training the model
-epochs = 10
-for epoch in range(epochs):
-    running_loss = 0.0
-    for images, labels in train_loader:
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
-
-# Assuming you have the same transform defined for preprocessing
-test_dataset = ImageFolder(root='path_to_test_dataset', transform=transform)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-model.load_state_dict(torch.load('model.pth'))
-model.eval()  # Set the model to evaluation mode
-correct = 0
-total = 0
-with torch.no_grad():  # No need to track gradients
-    for images, labels in test_loader:
-        outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-accuracy = 100 * correct / total
-print(f'Accuracy on the test dataset: {accuracy:.2f}%')
+# Convert class names to one-hot encoding
+lb = LabelBinarizer()
+one_hot_labels = lb.fit_transform(label_names)
 
 
+
+#=======================================================================================================\
+#this is where im testing linear regression
+#=======================================================================================================\
+
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import LabelEncoder
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+
+# Define the linear regression workflow
+def perform_linear_regression(images, labels):
+    # Ensure consistent feature and target lengths
+    feature_length = len(images)
+    target_length = len(labels)
+
+    if feature_length != target_length:
+        min_length = min(feature_length, target_length)
+        images = images[:min_length]
+        labels = labels[:min_length]
+        print("Adjusted lengths for consistency.")
+
+    # Flatten the image arrays for use in linear regression
+    image_arrays = [np.array(img).flatten() for img in images]
+
+    # Convert the target labels to numeric (example: using LabelEncoder)
+    label_encoder = LabelEncoder()
+    numeric_labels = label_encoder.fit_transform(labels)
+
+    # Split the data into training and testing sets (80-20 split)
+    X_train, X_test, y_train, y_test = train_test_split(
+        image_arrays, numeric_labels, test_size=0.2, random_state=42
+    )
+
+    # Create a linear regression model and fit it
+    lin_reg = LinearRegression()
+    lin_reg.fit(X_train, y_train)
+
+    # Predict on the test set
+    y_pred = lin_reg.predict(X_test)
+
+    # Evaluate the model
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    print("Mean Squared Error:", mse)
+    print("R-squared Score:", r2)
+
+    return lin_reg
+
+# Example usage
+# Assuming 'images' contains a list of images and 'new_label_names' contains the mapped label names
+# Perform linear regression on the dataset
+linear_regression_model = perform_linear_regression(images, new_label_names)
 
