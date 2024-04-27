@@ -69,8 +69,8 @@ for i, img in enumerate(processed_images[:5]):
 def categorize_label(label_name):
     if label_name == "No Finding":
         return "No Finding"
-    elif label_name == "Infiltration":
-        return "Infiltration"
+    elif label_name == "Pneumonia":
+        return "Pneumonia"
     else:
         return "other"
 
@@ -95,56 +95,57 @@ one_hot_labels = lb.fit_transform(label_names)
 #this is where im testing linear regression
 #=======================================================================================================\
 
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import LabelEncoder
-import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image
 
-# Define the linear regression workflow
-def perform_linear_regression(images, labels):
-    # Ensure consistent feature and target lengths
-    feature_length = len(images)
-    target_length = len(labels)
+# Generate synthetic data with a clear linear relationship
+np.random.seed(0)
+X = np.linspace(0, 10, 100)  # Independent variable
+y = 2 * X + 3 + np.random.normal(0, 1, 100)  # Dependent variable with added noise
 
-    if feature_length != target_length:
-        min_length = min(feature_length, target_length)
-        images = images[:min_length]
-        labels = labels[:min_length]
-        print("Adjusted lengths for consistency.")
+# Convert to a DataFrame
+data = pd.DataFrame({'X': X, 'y': y})
 
-    # Flatten the image arrays for use in linear regression
-    image_arrays = [np.array(img).flatten() for img in images]
+# Split into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(data[['X']], data['y'], test_size=0.2, random_state=0)
 
-    # Convert the target labels to numeric (example: using LabelEncoder)
-    label_encoder = LabelEncoder()
-    numeric_labels = label_encoder.fit_transform(labels)
+# Fit a linear regression model
+model = LinearRegression()
+model.fit(X_train, y_train)
 
-    # Split the data into training and testing sets (80-20 split)
-    X_train, X_test, y_train, y_test = train_test_split(
-        image_arrays, numeric_labels, test_size=0.2, random_state=42
-    )
+# Predict on test data
+y_pred = model.predict(X_test)
 
-    # Create a linear regression model and fit it
-    lin_reg = LinearRegression()
-    lin_reg.fit(X_train, y_train)
+# Calculate evaluation metrics
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
 
-    # Predict on the test set
-    y_pred = lin_reg.predict(X_test)
+print("Mean Squared Error:", mse)
+print("R-squared:", r2)
 
-    # Evaluate the model
-    mse = mean_squared_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
+# Plot the data and the linear regression line
+plt.figure(figsize=(10, 6))
+plt.scatter(X_train, y_train, color='blue', label='Training Data')
+plt.scatter(X_test, y_test, color='green', label='Testing Data')
+plt.plot(X_test, y_pred, color='red', label='Regression Line')
+plt.xlabel('X')
+plt.ylabel('y')
+plt.title('Linear Regression with Regression Line')
+plt.legend()
+plt.show()
 
-    print("Mean Squared Error:", mse)
-    print("R-squared Score:", r2)
+# Plot residuals
+residuals = y_test - y_pred
 
-    return lin_reg
-
-# Example usage
-# Assuming 'images' contains a list of images and 'new_label_names' contains the mapped label names
-# Perform linear regression on the dataset
-linear_regression_model = perform_linear_regression(images, new_label_names)
-
+plt.figure(figsize=(10, 6))
+plt.scatter(X_test, residuals, color='purple', label='Residuals')
+plt.axhline(0, color='black', linestyle='--', linewidth=0.5)
+plt.xlabel('X')
+plt.ylabel('Residual')
+plt.title('Residual Plot')
+plt.legend()
+plt.show()
