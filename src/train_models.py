@@ -14,9 +14,9 @@ from plots import *
 import os
 import pandas as pd
 from PIL import Image
-from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
-
+from sklearn import preprocessing
+import joblib
 
 '''
 
@@ -61,17 +61,10 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx):
         img_name = os.path.join(self.root_dir, self.image_frame.iloc[idx, 0])
         image = Image.open(img_name).convert('L')
-        label = self.image_frame.iloc[idx, 3]  
-
+        label = self.image_frame.iloc[idx, 3]  # Adjust the column index if different
         image = self.to_tensor(image)
 
         return image, label
-
-#not used for now
-transform = transforms.Compose([
-    transforms.Resize((128, 128)),  
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  
-])
 
 # Load the data
 root_dir = 'Chest X-ray Images_extracted'
@@ -81,9 +74,10 @@ images, labels = next(iter(dataloader))
 #print(len(labels))
 #print(labels)
 label_encoder = LabelEncoder()
-
 #images, labels = load_images(data, image_folder)
 labels = label_encoder.fit_transform(labels)
+# Save the encoder
+joblib.dump(labels, 'saved_labels/label_encoder.joblib', compress=True)
 #print(len(labels))
 #print(images.shape, labels.shape)
 # Split data into training and testing sets
@@ -94,6 +88,7 @@ train_x, test_x, train_y, test_y = train_test_split(images, labels, test_size=0.
 #print(train_x.shape, test_x.shape, train_y.shape, test_y.shape)
 #print(len(images), len(labels))
 #print(np.unique(labels))
+
 # Reshape test_x into a 2D array
 test_x_2d = test_x.reshape(test_x.shape[0], -1)
 # Reshape train_x into a 2D array
@@ -105,26 +100,31 @@ def train_model(model, X_train, y_train):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(train_x_2d)
     X_test_scaled = scaler.transform(test_x_2d)
-   
+
     if model == 'MLP':
         print("Training MLP...")
 
         # Initialize and train MLP
-        mlp = MLP(hidden_layer_sizes=(100, 50), max_iter=300, warm_start=True, activation='relu',
+        mlp = MLP(hidden_layer_sizes=(100, 50), max_iter=500, warm_start=True, activation='relu',
                             solver='adam', verbose=False, random_state=42, learning_rate_init=.001)
         
-        mlp.train(X_train_scaled, train_y)
+        mlp.train(X_train_scaled, train_y, X_test_scaled, test_y )
         test_preds = mlp.predict(X_test_scaled)  
         
         # Evaluate the mlp model
-        accuracy, conf_matrix, report = evaluate_mlp(mlp, X_test_scaled, test_preds)
+        accuracy, conf_matrix, report, precision, recall, f1, support = evaluate_mlp(mlp, X_test_scaled, test_y)
         print(f"Accuracy: {accuracy * 100:.2f}%")
-        print(report)
+        print(f'Precision: {precision}')
+        print(f'Recall: {recall}')
+        print(f'F1: {f1}')
+        print(f'Support: {support}')
+        df = pd.DataFrame(report).transpose()
+        print(df)
         print(conf_matrix)
-        
         plot_graphs('MLP', test_y, test_preds, accuracy, conf_matrix, report)
-        train_and_plot_mlp_metrics(mlp, X_train_scaled, train_y, X_test_scaled, test_y, iterations=300)
-    
+        mlp.plot_loss_and_accuracy()
+        save_model({'MLP Classifier': mlp})
+        
     elif model == 'Decision_Tree':
         print("Training Decision Tree...")
         # Create and train Decision Tree
@@ -135,10 +135,11 @@ def train_model(model, X_train, y_train):
         # Evaluate the model
         accuracy, conf_matrix, report = evaluate_model(tree, X_test_scaled, test_y)
         print(f"Accuracy: {accuracy * 100:.2f}%")
-        print(report)
+        df = pd.DataFrame(report).transpose()
+        print(df)
         print(conf_matrix)
-        
-        plot_graphs('Decision Tree', test_y, test_preds)
+        plot_graphs('Decision Tree', test_y, test_preds, accuracy, conf_matrix, report)
+        save_model({'Decision Tree Classifier': tree})
         
     elif model == 'Naive_Bayes_classifier':
         print("Training Naive Bayes...")
@@ -151,9 +152,9 @@ def train_model(model, X_train, y_train):
         print(f"ROC AUC: {float(roc_auc):.2f}")
         print(report)
         print(conf_matrix)
+        plot_graphs('Naive Bayes', test_y, test_preds, accuracy, conf_matrix, report)
+        save_model({'Naive Bayes Classifier': naive_bayes})
         
-        plot_graphs('Naive Bayes', test_y, test_preds)
-    
     elif model == 'Logistic_Regression':
         print("Training Logistic Regression...")
         # Create and train Logistic Regression
@@ -170,36 +171,44 @@ def train_model(model, X_train, y_train):
             print(f"ROC AUC: {float(roc_auc):.2f}")
         print(report)
         print(conf_matrix)
-        
-        plot_graphs('Logistic Regression', test_y, test_preds)
+        plot_graphs('Logistic Regression', test_y, test_preds, accuracy, conf_matrix, report)
+        # Save the model
+        save_model({'Logistic Regression Classifier': logistic_model})
     
     elif model == 'SVM':
         print("Training SVM...")
         # Initialize and train SVM
         svm = SVMModel(kernel='linear', C=1.0, random_state=42)
-        svm.train(X_train_scaled, y_train)
-        test_preds = svm.predict(X_test_scaled)  # Add this line
+        svm.fit(X_train_scaled, y_train)
+        test_preds = svm.predict(X_test_scaled) 
         # Evaluate the model
         accuracy, conf_matrix, report = evaluate_svm(svm, X_test_scaled, test_y)
         print(f"Accuracy: {accuracy * 100:.2f}%")
-        print(report)
+        df = pd.DataFrame(report).transpose()
+        print(df)
         print(conf_matrix)
-        plot_graphs('SVM', test_y, test_preds)
-
+        plot_graphs('SVM', test_y, test_preds, accuracy, conf_matrix, report)
+        
+        plot_learning_curve_svm(svm, "Learning Curve for SVM Model", X_train_scaled, y_train, cv=5, n_jobs=-1)
+        plot_accuracy_curve_svm(svm, X_test_scaled, test_y, cv=5)
+        #cv_scores = svm.cross_val_score(report, X_test_scaled, test_y, cv=5)
+        # Save the model
+        save_model({'SVM Classifier': svm})
+    
     elif model == 'RandomForestModel':
         print("Decision Tree with Random Tree Classifier...")
         # Create and train Random Forest
         forest_model = RandomForestModel(n_estimators=100, max_depth=3, random_state=42)
         forest_model.train(X_train_scaled, train_y)
-        test_preds = forest_model.predict(X_test_scaled)  # Add this line
+        test_preds = forest_model.predict(X_test_scaled)  
         # Evaluate the model
         accuracy, conf_matrix, report = evaluate_model(forest_model, X_test_scaled, test_y)
         print(f"Accuracy: {accuracy * 100:.2f}%")
         print(report)
         print(conf_matrix)
+        plot_graphs('Random Forest', test_y, test_preds, accuracy, conf_matrix, report)
+        save_model({'Random Forest': forest_model})
         
-        plot_graphs('Random Forest', test_y, test_preds)
-
     elif model == 'DecisionTreeClassifier':
         print("Training Decision Tree with GridSearch...")
         dt = DecisionTreeClassifierModel()
@@ -219,18 +228,17 @@ def train_model(model, X_train, y_train):
         print("Best cross-validation score: {:.2f}".format(grid_search.best_score_))
         print("Test set score: {:.2f}".format(accuracy_score(test_y, y_pred)))
         print(classification_report(test_y, y_pred))
-
+        plot_graphs('Decision Tree Classifier', test_y, y_pred, accuracy_score(test_y, y_pred), confusion_matrix(test_y, y_pred), classification_report(test_y, y_pred, output_dict=True))
+        save_model({'Decision Tree Classifier': best_dt})
+        
 def save_model(model, directory='save_trained_models'):
-    from torch import save
+    from joblib import dump
     from os import path
     import os
     if not path.exists(directory):
         os.makedirs(directory)
     for n, m in model.items():
-        if isinstance(m, nn.Module):
-            save_path = path.join(directory, f'{n}.th')
-            save(m.state_dict(), save_path)
-        else:
-            raise ValueError("model type '%s' not supported!" % str(type(m)))
+        save_path = path.join(directory, f'{n}.joblib')
+        dump(m, save_path)
 
 
